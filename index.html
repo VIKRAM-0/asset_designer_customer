@@ -737,13 +737,13 @@ async function applyFabric(idx) {
     const mtl = fabric.defaults.metalness !== undefined ? fabric.defaults.metalness : 0.0;
     const bmp = fabric.defaults.bump !== undefined ? fabric.defaults.bump : 1.0;
 
-    // Physics-based scaling: scale texture based on model size
-    // Larger models get smaller texture scales, smaller models get larger scales
-    const maxModelDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
-    const physicsScale = Math.max(0.5, Math.min(8.0, 4.0 / maxModelDim)); // Clamp between 0.5 and 8.0
+    // COMPENSATED SCALING: Calculate how much the model was scaled to fit the screen
+    // This ensures a 3-seat sofa and a 1-seat chair have the exact same fabric pattern size
+    const maxDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
+    const scaleCompensation = maxDim / 1.6; 
     
-    // Use physics-based scale if no custom scale is set, otherwise use the custom scale
-    const finalScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : physicsScale;
+    const baseScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : 3.0;
+    const finalScale = baseScale * scaleCompensation;
 
     // Update UI Sliders to Preset Defaults
     document.getElementById('brightness').value = bright;
@@ -817,10 +817,17 @@ function applyPropToChecked(prop, val) {
 function updateTextureScale(val) {
   const scale = parseFloat(val);
   document.getElementById('tex-scale-val').textContent = scale.toFixed(1);
+  
+  // Apply the same scale compensation to the manual slider
+  const maxDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
+  const scaleCompensation = maxDim / 1.6;
+  const finalScale = scale * scaleCompensation;
+
   meshEntries.forEach(entry => {
-    if (entry.checked && entry.greyMat) {['map', 'normalMap', 'roughnessMap'].forEach(type => {
+    if (entry.checked && entry.greyMat) {
+      ['map', 'normalMap', 'roughnessMap'].forEach(type => {
         const tex = entry.greyMat[type];
-        if (tex) { tex.repeat.set(scale, scale); tex.needsUpdate = true; }
+        if (tex) { tex.repeat.set(finalScale, finalScale); tex.needsUpdate = true; }
       });
     }
   });
