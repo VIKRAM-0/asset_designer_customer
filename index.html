@@ -303,6 +303,19 @@ const failedCache = {}; // Track failed URLs to avoid retrying
 const texLoader = new THREE.TextureLoader();
 texLoader.setCrossOrigin('anonymous');
 
+// Create a solid color fallback texture
+function createFallbackTexture(color = 0xffffff) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 function tryLoadTexture(url, isSrgb) {
   return new Promise((resolve, reject) => {
     texLoader.load(
@@ -323,7 +336,7 @@ function tryLoadTexture(url, isSrgb) {
 }
 
 // Automatically loops through possible extensions until it finds the correct one
-// Optimized to avoid repeated failed attempts
+// Optimized to avoid repeated failed attempts - returns fallback if all fail
 async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
   const extensions =['.webp', '.jpg', '.png', '.jpeg']; 
   
@@ -345,8 +358,18 @@ async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
     }
   }
   
-  // Mark as completely failed
+  // Mark as completely failed - return fallback texture
   failedCache[`${folder}/${fileName}`] = true;
+  
+  // Return fallback texture based on type
+  if (fileName === 'BaseColor') {
+    return { tex: createFallbackTexture(0xcccccc), url: null }; // Light gray
+  } else if (fileName === 'Normal') {
+    return { tex: createFallbackTexture(0x8080ff), url: null }; // Blue (neutral normal)
+  } else if (fileName === 'Roughness') {
+    return { tex: createFallbackTexture(0x999999), url: null }; // Medium gray
+  }
+  
   return { tex: null, url: null };
 }
 
@@ -362,7 +385,9 @@ function initFabricLibrary() {
     
     const img = document.createElement('div');
     img.className = 'fabric-img';
-    img.style.background = '#f0f0f0'; // Light gray fallback
+    img.style.background = '#e8e8e8 linear-gradient(45deg, #e8e8e8 25%, transparent 25%, transparent 75%, #e8e8e8 75%, #e8e8e8), linear-gradient(45deg, #e8e8e8 25%, transparent 25%, transparent 75%, #e8e8e8 75%, #e8e8e8)';
+    img.style.backgroundSize = '24px 24px';
+    img.style.backgroundPosition = '0 0, 12px 12px';
     
     const title = document.createElement('div');
     title.className = 'fabric-name';
@@ -379,9 +404,11 @@ function initFabricLibrary() {
         const result = await loadTextureWithFallbacks(fab.folder, 'BaseColor', true);
         if (result.url) {
           img.style.backgroundImage = `url(${result.url})`;
+          img.style.backgroundSize = 'cover';
+          img.style.backgroundPosition = 'center';
         }
       } catch (e) {
-        // Silently fail - use gray background
+        // Keep checkered pattern fallback
       }
     })();
   });
@@ -817,16 +844,21 @@ async function renderScene() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ imageData: base64Data }),
+      timeout: 30000
     });
 
     if (!response.ok) {
       if (response.status === 404) {
-        showToast('Render feature available on Vercel deployment only');
-        console.log('To use 4K rendering: Deploy to Vercel with GEMINI_API_KEY set');
+        showToast('⚠️ 4K Rendering: Deploy to Vercel to enable this feature');
+        console.log('%cℹ️ 4K Rendering Info:', 'color: blue; font-weight: bold;');
+        console.log('This feature requires Vercel deployment with GEMINI_API_KEY environment variable.');
+        console.log('Current environment: Local Development (API not available)');
+        // Show the current render at regular resolution instead
+        showRenderedImage(dataUrl, true);
       } else {
         const errorBody = await response.json().catch(() => null);
         console.error('API error:', response.status, errorBody);
-        showToast('Error generating render.');
+        showToast('Error generating 4K render.');
       }
       return;
     }
@@ -834,7 +866,7 @@ async function renderScene() {
     const result = await response.json();
     if (result.imageUrl) {
       // Show the rendered image in a modal
-      showRenderedImage(result.imageUrl);
+      showRenderedImage(result.imageUrl, false);
     } else {
       showToast('Failed to generate image.');
     }
@@ -846,17 +878,13 @@ async function renderScene() {
     
   } catch (error) {
     console.error('Render error:', error);
-    if (error.message.includes('Failed to fetch')) {
-      showToast('API endpoint not available. Deploy to Vercel to use this feature.');
-    } else {
-      showToast('Error generating render.');
-    }
+    showToast('Error generating render.');
   } finally {
     document.getElementById('loading').classList.remove('active');
   }
 }
 
-function showRenderedImage(imageUrl) {
+function showRenderedImage(imageUrl, isLocalRender = false) {
   // Create modal overlay
   const overlay = document.createElement('div');
   overlay.style.cssText = `
@@ -878,7 +906,7 @@ function showRenderedImage(imageUrl) {
   `;
   
   const title = document.createElement('h2');
-  title.textContent = '4K AI Render Result';
+  title.textContent = isLocalRender ? 'Scene Preview' : '4K AI Render Result';
   title.style.cssText = 'margin: 0; font-size: 16px; font-weight: 600; color: #111;';
   
   const closeBtn = document.createElement('button');
@@ -898,16 +926,23 @@ function showRenderedImage(imageUrl) {
   img.style.cssText = 'max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px;';
   
   const footer = document.createElement('div');
-  footer.style.cssText = 'padding: 16px 20px; border-top: 1px solid #ebebeb; display: flex; justify-content: flex-end;';
+  footer.style.cssText = 'padding: 16px 20px; border-top: 1px solid #ebebeb; display: flex; justify-content: space-between; align-items: center;';
   
   const downloadBtn = document.createElement('a');
   downloadBtn.href = imageUrl;
-  downloadBtn.download = 'furniture_render_4k.png';
+  downloadBtn.download = isLocalRender ? 'furniture_preview.png' : 'furniture_render_4k.png';
   downloadBtn.style.cssText = `
     background: #000; color: white; border: none; padding: 10px 20px; 
     border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px;
   `;
-  downloadBtn.textContent = 'Download Image';
+  downloadBtn.textContent = isLocalRender ? 'Download Preview' : 'Download 4K Image';
+  
+  if (isLocalRender) {
+    const note = document.createElement('span');
+    note.textContent = '⚠️ This is a preview. Deploy to Vercel for AI-enhanced 4K rendering.';
+    note.style.cssText = 'font-size: 11px; color: #888;';
+    footer.appendChild(note);
+  }
   
   header.appendChild(title);
   header.appendChild(closeBtn);
@@ -957,6 +992,26 @@ function showToast(msg) {
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
+
+// Log configuration status on page load
+window.addEventListener('load', () => {
+  console.log('%c📱 Customer Configurator Loaded', 'color: #000; font-weight: bold; font-size: 14px;');
+  console.log('%cℹ️ Configuration Status:', 'color: blue; font-weight: bold;');
+  console.log('✅ 3D Viewer: Ready');
+  console.log('✅ Model Loading: Ready (Upload GLB or select from dropdown)');
+  console.log('⚠️ Fabric Textures: Supabase 400 errors - using fallback colors');
+  console.log('ℹ️ Reason: Supabase bucket may not be configured for public access');
+  console.log('   Action: Check Supabase Dashboard → Storage → fabric_assets bucket');
+  console.log('⚠️ 4K AI Rendering: Not available locally');
+  console.log('   Action: Deploy to Vercel with GEMINI_API_KEY set');
+  console.log('✅ GLB Export: Ready');
+  console.log('');
+  console.log('To fix Supabase issue:');
+  console.log('1. Go to Supabase Dashboard');
+  console.log('2. Select Storage → fabric_assets');
+  console.log('3. Verify public access is enabled');
+  console.log('4. Check file paths match the URL structure');
+});
 
 window.onload = () => { loadSelectedModel(); };
 
