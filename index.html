@@ -737,10 +737,10 @@ async function applyFabric(idx) {
     const mtl = fabric.defaults.metalness !== undefined ? fabric.defaults.metalness : 0.0;
     const bmp = fabric.defaults.bump !== undefined ? fabric.defaults.bump : 1.0;
 
-    // COMPENSATED SCALING: Calculate how much the model was scaled to fit the screen
-    // This ensures a 3-seat sofa and a 1-seat chair have the exact same fabric pattern size
+    // COMPENSATED SCALING: Multiply by the model's actual scale factor
+    // This shrinks the pattern repeat amount on large objects so the flowers stay big
     const maxDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
-    const scaleCompensation = maxDim / 1.6; 
+    const scaleCompensation = 1.6 / maxDim; // <--- The math is now inverted to match the 3D scale
     
     const baseScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : 3.0;
     const finalScale = baseScale * scaleCompensation;
@@ -818,9 +818,9 @@ function updateTextureScale(val) {
   const scale = parseFloat(val);
   document.getElementById('tex-scale-val').textContent = scale.toFixed(1);
   
-  // Apply the same scale compensation to the manual slider
+  // Apply the same inverted scale compensation to the manual slider
   const maxDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
-  const scaleCompensation = maxDim / 1.6;
+  const scaleCompensation = 1.6 / maxDim; // <--- Corrected inverted math
   const finalScale = scale * scaleCompensation;
 
   meshEntries.forEach(entry => {
