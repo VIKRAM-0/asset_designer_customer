@@ -24,7 +24,7 @@ export default async function handler(req: any, res: any) {
           {
             inlineData: {
               data: imageData,
-              mimeType: 'image/png',
+              mimeType: 'image/jpeg',
             },
           },
           {
