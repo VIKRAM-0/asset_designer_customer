@@ -299,6 +299,7 @@ const fabricLibrary =[
 
 // ── Smart Texture Loader (Checks multiple extensions) ──────────
 const texCache = {};
+const failedCache = {}; // Track failed URLs to avoid retrying
 const texLoader = new THREE.TextureLoader();
 texLoader.setCrossOrigin('anonymous');
 
@@ -313,17 +314,24 @@ function tryLoadTexture(url, isSrgb) {
         resolve(tex);
       },
       undefined,
-      () => reject(new Error('File missing'))
+      () => {
+        failedCache[url] = true; // Mark URL as failed
+        reject(new Error('File missing'));
+      }
     );
   });
 }
 
 // Automatically loops through possible extensions until it finds the correct one
+// Optimized to avoid repeated failed attempts
 async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
   const extensions =['.webp', '.jpg', '.png', '.jpeg']; 
   
   for (let ext of extensions) {
     const url = `${folder}/${fileName}${ext}`;
+    
+    // Skip if already cached as failed
+    if (failedCache[url]) continue;
     
     // Check Cache first
     if (texCache[url]) return { tex: texCache[url], url };
@@ -333,11 +341,12 @@ async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
       const tex = await tryLoadTexture(url, isSrgb);
       return { tex, url }; // Success!
     } catch (e) {
-      // Silently move to the next extension
+      // Silently continue to next extension
     }
   }
   
-  console.warn(`Could not find texture map for: ${folder}/${fileName}`);
+  // Mark as completely failed
+  failedCache[`${folder}/${fileName}`] = true;
   return { tex: null, url: null };
 }
 
@@ -353,6 +362,7 @@ function initFabricLibrary() {
     
     const img = document.createElement('div');
     img.className = 'fabric-img';
+    img.style.background = '#f0f0f0'; // Light gray fallback
     
     const title = document.createElement('div');
     title.className = 'fabric-name';
@@ -363,10 +373,15 @@ function initFabricLibrary() {
     grid.appendChild(card);
     
     // Dynamically find the BaseColor extension for the thumbnail
+    // Don't show errors if textures can't be loaded
     (async () => {
-      const result = await loadTextureWithFallbacks(fab.folder, 'BaseColor', true);
-      if (result.url) {
-        img.style.backgroundImage = `url(${result.url})`;
+      try {
+        const result = await loadTextureWithFallbacks(fab.folder, 'BaseColor', true);
+        if (result.url) {
+          img.style.backgroundImage = `url(${result.url})`;
+        }
+      } catch (e) {
+        // Silently fail - use gray background
       }
     })();
   });
@@ -795,6 +810,7 @@ async function renderScene() {
     const base64Data = dataUrl.split(',')[1];
 
     // Call the API to generate AI-enhanced image
+    // Note: /api/generate only works when deployed to Vercel
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: {
@@ -804,9 +820,14 @@ async function renderScene() {
     });
 
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      console.error('API error:', response.status, errorBody);
-      showToast('Error generating render.');
+      if (response.status === 404) {
+        showToast('Render feature available on Vercel deployment only');
+        console.log('To use 4K rendering: Deploy to Vercel with GEMINI_API_KEY set');
+      } else {
+        const errorBody = await response.json().catch(() => null);
+        console.error('API error:', response.status, errorBody);
+        showToast('Error generating render.');
+      }
       return;
     }
 
@@ -825,7 +846,11 @@ async function renderScene() {
     
   } catch (error) {
     console.error('Render error:', error);
-    showToast('Error generating render.');
+    if (error.message.includes('Failed to fetch')) {
+      showToast('API endpoint not available. Deploy to Vercel to use this feature.');
+    } else {
+      showToast('Error generating render.');
+    }
   } finally {
     document.getElementById('loading').classList.remove('active');
   }
