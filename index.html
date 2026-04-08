@@ -297,11 +297,31 @@ const fabricLibrary =[
   { name: 'Printed Fabric', folder: BASE_URL + 'printted_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } }
 ];
 
-// ── Smart Texture Loader (Checks multiple extensions) ──────────
+// ── Smart Texture Loader Using Fetch (Flexible Extensions) ────────
 const texCache = {};
-const failedCache = {}; // Track failed URLs to avoid retrying
 const texLoader = new THREE.TextureLoader();
 texLoader.setCrossOrigin('anonymous');
+
+// Convert blob to texture (fetch-based approach)
+function blobToTexture(blob, isSrgb) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    texLoader.load(
+      url,
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.encoding = isSrgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        URL.revokeObjectURL(url);
+        resolve(tex);
+      },
+      undefined,
+      () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to parse texture'));
+      }
+    );
+  });
+}
 
 // Create a solid color fallback texture
 function createFallbackTexture(color = 0xffffff) {
@@ -316,52 +336,61 @@ function createFallbackTexture(color = 0xffffff) {
   return tex;
 }
 
-function tryLoadTexture(url, isSrgb) {
-  return new Promise((resolve, reject) => {
-    texLoader.load(
-      url,
-      (tex) => {
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        tex.encoding = isSrgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-        texCache[url] = tex;
-        resolve(tex);
+// Fetch-based texture loader with aggressive retry logic
+async function tryFetchTexture(url, isSrgb) {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'image/*',
       },
-      undefined,
-      () => {
-        failedCache[url] = true; // Mark URL as failed
-        reject(new Error('File missing'));
-      }
-    );
-  });
+      credentials: 'omit'
+    });
+    
+    if (!response.ok) {
+      console.warn(`[Texture Fetch] HTTP ${response.status}: ${url}`);
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const blob = await response.blob();
+    if (!blob.size) throw new Error('Empty blob received');
+    
+    return await blobToTexture(blob, isSrgb);
+  } catch (e) {
+    console.warn(`[Texture Fetch Failed] ${url}: ${e.message}`);
+    throw e;
+  }
 }
 
-// Automatically loops through possible extensions until it finds the correct one
-// Optimized to avoid repeated failed attempts - returns fallback if all fail
+// Automatically loops through ALL possible extensions (webp, jpg, png, jpeg)
 async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
-  const extensions =['.webp', '.jpg', '.png', '.jpeg']; 
+  // Try all common image extensions in order
+  const extensions = ['.webp', '.jpg', '.JPG', '.png', '.PNG', '.jpeg', '.JPEG'];
   
   for (let ext of extensions) {
     const url = `${folder}/${fileName}${ext}`;
     
-    // Skip if already cached as failed
-    if (failedCache[url]) continue;
-    
     // Check Cache first
-    if (texCache[url]) return { tex: texCache[url], url };
+    if (texCache[url]) {
+      console.debug(`[Texture Cache Hit] ${fileName}${ext}`);
+      return { tex: texCache[url], url };
+    }
     
-    // Try to load
+    // Try to fetch and load
     try {
-      const tex = await tryLoadTexture(url, isSrgb);
-      return { tex, url }; // Success!
+      console.debug(`[Texture Loading] Attempting: ${fileName}${ext}`);
+      const tex = await tryFetchTexture(url, isSrgb);
+      texCache[url] = tex;
+      console.log(`✓ [Texture Loaded] ${fileName}${ext}`);
+      return { tex, url };
     } catch (e) {
-      // Silently continue to next extension
+      // Continue to next extension
     }
   }
   
-  // Mark as completely failed - return fallback texture
-  failedCache[`${folder}/${fileName}`] = true;
+  // All extensions failed - return fallback texture
+  console.warn(`[Texture Fallback] No valid texture found for ${fileName}, using procedural color`);
   
-  // Return fallback texture based on type
   if (fileName === 'BaseColor') {
     return { tex: createFallbackTexture(0xcccccc), url: null }; // Light gray
   } else if (fileName === 'Normal') {
@@ -999,18 +1028,22 @@ window.addEventListener('load', () => {
   console.log('%cℹ️ Configuration Status:', 'color: blue; font-weight: bold;');
   console.log('✅ 3D Viewer: Ready');
   console.log('✅ Model Loading: Ready (Upload GLB or select from dropdown)');
-  console.log('⚠️ Fabric Textures: Supabase 400 errors - using fallback colors');
-  console.log('ℹ️ Reason: Supabase bucket may not be configured for public access');
-  console.log('   Action: Check Supabase Dashboard → Storage → fabric_assets bucket');
-  console.log('⚠️ 4K AI Rendering: Not available locally');
-  console.log('   Action: Deploy to Vercel with GEMINI_API_KEY set');
-  console.log('✅ GLB Export: Ready');
   console.log('');
-  console.log('To fix Supabase issue:');
-  console.log('1. Go to Supabase Dashboard');
-  console.log('2. Select Storage → fabric_assets');
-  console.log('3. Verify public access is enabled');
-  console.log('4. Check file paths match the URL structure');
+  console.log('%cℹ️ Texture Loading Strategy:', 'color: green; font-weight: bold;');
+  console.log('File extensions being tried (in order):');
+  console.log('  1. .webp (modern compressed format)');
+  console.log('  2. .JPG / .jpg (standard compressed)');
+  console.log('  3. .PNG / .png (lossless format)');
+  console.log('  4. .JPEG / .jpeg (alternative compressed)');
+  console.log('');
+  console.log('Watch the console logs below for [Texture Loading] and [Texture Loaded] messages');
+  console.log('');
+  console.log('%cℹ️ 4K AI Rendering:', 'color: orange; font-weight: bold;');
+  console.log('⚠️ Not available locally (404 /api/generate)');
+  console.log('Action: Deploy to Vercel with GEMINI_API_KEY set');
+  console.log('');
+  console.log('%cℹ️ GLB Export:', 'color: purple; font-weight: bold;');
+  console.log('✅ Ready - Select meshes and click "Download GLB"');
 });
 
 window.onload = () => { loadSelectedModel(); };
