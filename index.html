@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro Furniture Configurator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
+  
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { 
+    --bg: #ffffff; 
+    --panel: #ffffff;
+    --border: #ebebeb; 
+    --text: #111111; 
+    --muted: #888888; 
+    --accent: #000000;
+    --accent-hover: #555555;
+    --font-main: 'Inter', sans-serif;
+  }
+  
+  body { 
+    background: var(--bg); color: var(--text); 
+    font-family: var(--font-main); font-weight: 400; 
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden; 
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Header */
+  header { 
+    padding: 20px 32px; display: flex; align-items: center; justify-content: space-between;
+    background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 40;
+  }
+  .header-left { display: flex; align-items: baseline; gap: 16px; }
+  header h1 { font-family: var(--font-main); font-size: 14px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+  header span { font-size: 11px; letter-spacing: 0.05em; color: var(--muted); }
+  
+  .header-controls { display: flex; align-items: center; gap: 16px; }
+  select.model-select {
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23111' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 5 6 8 9 5'/%3E%3C/svg%3E") no-repeat right 12px center;
+    color: var(--text); border: 1px solid var(--border);
+    padding: 8px 32px 8px 16px; font-family: var(--font-main);
+    font-size: 12px; outline: none; cursor: pointer; transition: border-color 0.2s ease;
+    border-radius: 0;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select.model-select:hover { border-color: var(--text); }
+  
+  .btn-render { 
+    background: var(--accent); color: #fff; border: 1px solid var(--accent); padding: 8px 24px; 
+    font-size: 12px; font-weight: 400; cursor: pointer; 
+    transition: all 0.2s ease; border-radius: 0;
+  }
+  .btn-render:hover { background: var(--bg); color: var(--accent); }
+  
+  .btn-primary { 
+    background: var(--accent); color: #fff; border: 1px solid var(--accent); padding: 8px 24px; 
+    font-size: 12px; font-weight: 400; cursor: pointer; 
+    transition: all 0.2s ease; border-radius: 0;
+  }
+  .btn-primary:hover { background: var(--bg); color: var(--accent); }
+
+  .btn-secondary {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+    padding: 8px 24px; font-size: 12px; font-weight: 400; cursor: pointer; 
+    transition: all 0.2s ease; display: inline-block; border-radius: 0;
+  }
+  .btn-secondary:hover { border-color: var(--text); }
+
+  /* Main Layout */
+  .main { display: flex; flex: 1; overflow: hidden; position: relative; }
+  
+  .side-panel { 
+    width: 320px; background: var(--panel); display: flex; flex-direction: column; 
+    overflow-y: auto; flex-shrink: 0; z-index: 30;
+  }
+  .left-panel { border-right: 1px solid var(--border); }
+  .right-panel { border-left: 1px solid var(--border); }
+
+  /* 3D Viewer */
+  #viewer { 
+    flex: 1; position: relative; cursor: grab;
+    background: #f8f8f8; /* Clean, very light gray for bright studio feel */
+  }
+  #viewer:active { cursor: grabbing; }
+  #viewer.dragover { outline: 1px solid var(--accent); outline-offset: -1px; background: #f0f0f0; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  /* Drop Overlay */
+  #drop-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; 
+    justify-content: center; gap: 16px; pointer-events: none; z-index: 10;
+  }
+  #drop-overlay.hidden { display: none; }
+  .drop-ring { width: 64px; height: 64px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 50%; }
+  #drop-overlay p { font-size: 12px; color: var(--muted); }
+  #drop-overlay svg { stroke: var(--text); }
+  
+  /* Left Panel - Fabric Library */
+  .section { padding: 32px; border-bottom: 1px solid var(--border); overflow: visible; }
+  .section:last-child { border-bottom: none; }
+  .section-title { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 24px; font-weight: 500;}
+  
+  .fabric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .fabric-card { 
+    background: transparent; border: 1px solid var(--border); 
+    overflow: hidden; cursor: pointer; transition: border-color 0.2s ease;
+  }
+  .fabric-card:hover { border-color: var(--text); }
+  .fabric-img { width: 100%; aspect-ratio: 1; background-size: cover; background-position: center; border-bottom: 1px solid var(--border); }
+  .fabric-name { padding: 12px 8px; font-size: 11px; text-align: center; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 400;}
+
+  /* Right Panel - Properties */
+  .mesh-list { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; margin-bottom: 24px;}
+  .mesh-item { 
+    padding: 10px 14px; background: transparent; border: 1px solid var(--border); 
+    font-size: 12px; color: var(--text); cursor: pointer; 
+    display: flex; align-items: center; gap: 12px; transition: border-color 0.2s ease;
+  }
+  .mesh-item:hover { border-color: #cccccc; }
+  .mesh-item.selected { border-color: var(--text); }
+  .mesh-item input[type="checkbox"] { 
+    appearance: none; -webkit-appearance: none;
+    width: 14px; height: 14px; border: 1px solid var(--border);
+    cursor: pointer; position: relative;
+    transition: all 0.2s ease;
+  }
+  .mesh-item input[type="checkbox"]:checked {
+    background: var(--text); border-color: var(--text);
+  }
+  .mesh-item input[type="checkbox"]:checked::after {
+    content: ''; position: absolute; top: 2px; left: 4px;
+    width: 3px; height: 6px; border: solid #fff; border-width: 0 1px 1px 0;
+    transform: rotate(45deg);
+  }
+
+  .prop-row { display: flex; align-items: center; margin-bottom: 20px; gap: 16px; }
+  .prop-row label { font-size: 11px; color: var(--text); min-width: 85px; }
+  .prop-val { font-size: 11px; color: var(--text); min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+  
+  input[type="range"] { -webkit-appearance: none; flex: 1; height: 1px; background: var(--border); outline: none; }
+  input[type="range"]::-webkit-slider-thumb { 
+    -webkit-appearance: none; width: 12px; height: 12px; 
+    background: var(--text); cursor: pointer; border-radius: 50%;
+    transition: transform 0.1s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  /* Overlays */
+  #loading { 
+    position: absolute; inset: 0; display: none; flex-direction: column; 
+    align-items: center; justify-content: center; gap: 16px; 
+    background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); z-index: 50; 
+  }
+  #loading.active { display: flex; }
+  .spinner { width: 24px; height: 24px; border: 1px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { font-size: 11px; color: var(--text); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  .controls-hint { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); display: none; gap: 24px; background: #ffffff; padding: 12px 24px; border: 1px solid var(--border); }
+  .controls-hint span { font-size: 10px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  
+  #toast { 
+    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); 
+    background: var(--text); border: 1px solid var(--text); padding: 12px 24px; 
+    font-size: 12px; color: #fff; opacity: 0; 
+    transition: opacity .3s, transform .3s; pointer-events: none; z-index: 99;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, -10px); }
+  
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Configurator</h1><span>Pro Studio Engine</span>
+  </div>
+  <div class="header-controls">
+    <label class="btn-secondary">
+      Upload GLB
+      <input type="file" accept=".glb,.gltf" style="display:none" onchange="handleFile(this.files[0])">
+    </label>
+    <select class="model-select" id="model-select" onchange="loadSelectedModel()">
+      <option value="https://nyvlydjdvhsunqbliqru.supabase.co/storage/v1/object/public/fabric_assets/glbs/sofa_191.glb">Sofa 191</option>
+      <option value="https://nyvlydjdvhsunqbliqru.supabase.co/storage/v1/object/public/fabric_assets/glbs/accent_chair_43.glb">Accent Chair 43</option>
+    </select>
+    <button class="btn-render" onclick="renderScene()">Render 4K</button>
+    <button class="btn-primary" onclick="exportGLB()">Download GLB</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Left Panel: Fabric Library -->
+  <div class="side-panel left-panel">
+    <div class="section">
+      <div class="section-title">Fabric Library</div>
+      <div class="fabric-grid" id="fabric-grid">
+        <!-- Dynamically injected from Supabase Library Array -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Center Viewer -->
+  <div id="viewer">
+    <div id="drop-overlay" class="hidden">
+      <div class="drop-ring">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#7a7670" stroke-width="1" stroke-linecap="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <p>Drop your GLB file here</p>
+    </div>
+    <div id="loading"><div class="spinner"></div><p id="loading-text">Processing…</p></div>
+    <div id="toast"></div>
+    <div class="controls-hint" id="controls-hint">
+      <span>Drag · Rotate</span>
+      <span>Scroll · Zoom</span>
+      <span>Right-drag · Pan</span>
+    </div>
+  </div>
+
+  <!-- Right Panel: Properties -->
+  <div class="side-panel right-panel">
+    <div class="section">
+      <div class="section-title">1. Target Meshes</div>
+      <div class="mesh-list" id="mesh-list">
+        <div style="font-size:11px;color:#888;">Loading meshes...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">2. Material Adjustments</div>
+      
+      <div class="prop-row">
+        <label>Brightness</label>
+        <input type="range" id="brightness" min="0" max="2" step="0.05" value="1.0" oninput="applyPropToChecked('brightness',this.value)">
+        <span class="prop-val" id="brightness-val">1.00</span>
+      </div>
+      <div class="prop-row">
+        <label>Roughness</label>
+        <input type="range" id="roughness" min="0" max="1" step="0.01" value="0.7" oninput="applyPropToChecked('roughness',this.value)">
+        <span class="prop-val" id="roughness-val">0.70</span>
+      </div>
+      <div class="prop-row">
+        <label>Metalness</label>
+        <input type="range" id="metalness" min="0" max="1" step="0.01" value="0" oninput="applyPropToChecked('metalness',this.value)">
+        <span class="prop-val" id="metalness-val">0.00</span>
+      </div>
+      <div class="prop-row">
+        <label>Fabric Fuzz</label>
+        <input type="range" id="sheen" min="0" max="1" step="0.01" value="0" oninput="applyPropToChecked('sheen',this.value)">
+        <span class="prop-val" id="sheen-val">0.00</span>
+      </div>
+      <hr style="border:0;border-top:1px solid var(--border);margin:24px 0;">
+      
+      <div class="prop-row">
+        <label>Pattern Scale</label>
+        <input type="range" id="tex-scale" min="0.5" max="25" step="0.1" value="3.0" oninput="updateTextureScale(this.value)">
+        <span class="prop-val" id="tex-scale-val">3.0</span>
+      </div>
+      <div class="prop-row">
+        <label>Bump Factor</label>
+        <input type="range" id="norm-scale" min="0" max="3" step="0.1" value="1.0" oninput="updateNormalScale(this.value)">
+        <span class="prop-val" id="norm-scale-val">1.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Core ThreeJS Loaders -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
+
+<script>
+// ── Supabase Fabric Library Definition (Folder Paths Only) ─────
+const BASE_URL = 'https://nyvlydjdvhsunqbliqru.supabase.co/storage/v1/object/public/fabric_assets/';
+
+// Updated Library with new Leather Dotted fabric and matching requested default numbers
+const fabricLibrary =[
+  { name: 'Boucle Fabric', folder: BASE_URL + 'boucle_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Cotton Fabric', folder: BASE_URL + 'cotton_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Curly Fabric', folder: BASE_URL + 'curly_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Dotted Fabric', folder: BASE_URL + 'dotted_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Leather Fabric', folder: BASE_URL + 'leather_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Leather Dotted', folder: BASE_URL + 'leather_dotted_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } }, // NEW
+  { name: 'Line Fabric', folder: BASE_URL + 'line_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } },
+  { name: 'Printed Fabric', folder: BASE_URL + 'printted_fabric', defaults: { brightness: 1.0, sheen: 0.0, roughness: 0.7, metalness: 0.0, scale: 3.0, bump: 1.0 } }
+];
+
+// ── Smart Texture Loader (Checks multiple extensions) ──────────
+const texCache = {};
+const texLoader = new THREE.TextureLoader();
+texLoader.setCrossOrigin('anonymous');
+
+function tryLoadTexture(url, isSrgb) {
+  return new Promise((resolve, reject) => {
+    texLoader.load(
+      url,
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.encoding = isSrgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        texCache[url] = tex;
+        resolve(tex);
+      },
+      undefined,
+      () => reject(new Error('File missing'))
+    );
+  });
+}
+
+// Automatically loops through possible extensions until it finds the correct one
+async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
+  const extensions =['.webp', '.jpg', '.png', '.jpeg']; 
+  
+  for (let ext of extensions) {
+    const url = `${folder}/${fileName}${ext}`;
+    
+    // Check Cache first
+    if (texCache[url]) return { tex: texCache[url], url };
+    
+    // Try to load
+    try {
+      const tex = await tryLoadTexture(url, isSrgb);
+      return { tex, url }; // Success!
+    } catch (e) {
+      // Silently move to the next extension
+    }
+  }
+  
+  console.warn(`Could not find texture map for: ${folder}/${fileName}`);
+  return { tex: null, url: null };
+}
+
+// ── Build UI with Smart Thumbnails ─────────────────────────────
+function initFabricLibrary() {
+  const grid = document.getElementById('fabric-grid');
+  grid.innerHTML = '';
+  
+  fabricLibrary.forEach((fab, idx) => {
+    const card = document.createElement('div');
+    card.className = 'fabric-card';
+    card.onclick = () => applyFabric(idx);
+    
+    const img = document.createElement('div');
+    img.className = 'fabric-img';
+    
+    const title = document.createElement('div');
+    title.className = 'fabric-name';
+    title.textContent = fab.name;
+    
+    card.appendChild(img);
+    card.appendChild(title);
+    grid.appendChild(card);
+    
+    // Dynamically find the BaseColor extension for the thumbnail
+    (async () => {
+      const result = await loadTextureWithFallbacks(fab.folder, 'BaseColor', true);
+      if (result.url) {
+        img.style.backgroundImage = `url(${result.url})`;
+      }
+    })();
+  });
+}
+initFabricLibrary();
+
+// ── Scene Setup & High-End Lighting ────────────────────────────
+const viewer = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.physicallyCorrectLights = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+viewer.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
+
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+scene.environment = pmremGenerator.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+const dirLight = new THREE.DirectionalLight(0xfff8f0, 2.5);
+dirLight.position.set(3, 5, 4);
+scene.add(ambientLight, dirLight);
+
+// ── Orbit Controls ─────────────────────────────────────────────
+let isDrag=false, isRight=false, prevMouse={x:0, y:0};
+let sph={theta: 0.6, phi: 1.2, r: 2.5};
+let tgt=new THREE.Vector3();
+
+function camUpdate() {
+  camera.position.set(
+    tgt.x + sph.r * Math.sin(sph.phi) * Math.sin(sph.theta),
+    tgt.y + sph.r * Math.cos(sph.phi),
+    tgt.z + sph.r * Math.sin(sph.phi) * Math.cos(sph.theta)
+  );
+  camera.lookAt(tgt);
+}
+camUpdate();
+
+viewer.addEventListener('mousedown', e => { isDrag = true; isRight = e.button === 2; prevMouse = {x:e.clientX, y:e.clientY}; });
+window.addEventListener('mousemove', e => {
+  if(!isDrag) return;
+  const dx = e.clientX - prevMouse.x, dy = e.clientY - prevMouse.y;
+  prevMouse = {x: e.clientX, y: e.clientY};
+  if(isRight) {
+    const spd = 0.002 * sph.r;
+    const right = new THREE.Vector3();
+    right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    tgt.addScaledVector(right, -dx * spd);
+    tgt.addScaledVector(camera.up, dy * spd);
+  } else {
+    sph.theta -= dx * 0.007;
+    sph.phi = Math.max(0.1, Math.min(Math.PI - 0.1, sph.phi - dy * 0.007));
+  }
+  camUpdate();
+});
+window.addEventListener('mouseup', () => isDrag = false);
+viewer.addEventListener('contextmenu', e => e.preventDefault());
+viewer.addEventListener('wheel', e => { sph.r = Math.max(0.5, Math.min(10, sph.r + e.deltaY * 0.004)); camUpdate(); e.preventDefault(); }, {passive: false});
+
+function resize() {
+  const w = viewer.clientWidth, h = viewer.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewer); resize();
+(function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); })();
+
+// ── GLTF & Draco Loaders Initialization ─────────────────────────
+const dracoLoader = new THREE.DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.3/');
+
+const gltfLoader = new THREE.GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
+
+let currentModel = null;
+let meshEntries =[];
+let currentModelSize = new THREE.Vector3(1, 1, 1); // Store model dimensions for physics-based scaling
+
+// Core GLTF Processing function
+function processGLTFScene(gltf) {
+  if(currentModel) scene.remove(currentModel);
+  currentModel = gltf.scene;
+
+  const box = new THREE.Box3().setFromObject(currentModel);
+  const ctr = box.getCenter(new THREE.Vector3());
+  const sz = box.getSize(new THREE.Vector3());
+  const sc = 1.6 / Math.max(sz.x, sz.y, sz.z);
+  currentModel.scale.setScalar(sc);
+  currentModel.position.sub(ctr.multiplyScalar(sc));
+  currentModelSize.copy(sz); // Store original model size for physics-based scaling
+  scene.add(currentModel);
+
+  meshEntries =[];
+  
+  currentModel.traverse(child => {
+    if(!child.isMesh) return;
+    
+    const materials = Array.isArray(child.material) ? child.material :[child.material];
+    
+    materials.forEach((origMat, index) => {
+      const greyMat = new THREE.MeshPhysicalMaterial();
+      if(origMat.color) greyMat.color.copy(origMat.color);
+      else greyMat.color.setHex(0xffffff);
+      
+      greyMat.roughness = origMat.roughness !== undefined ? origMat.roughness : 0.7;
+      greyMat.metalness = origMat.metalness !== undefined ? origMat.metalness : 0.0;
+      
+      if (origMat.map) greyMat.map = origMat.map;
+      if (origMat.normalMap) {
+          greyMat.normalMap = origMat.normalMap;
+          if (origMat.normalScale) greyMat.normalScale.copy(origMat.normalScale);
+      }
+      if (origMat.roughnessMap) greyMat.roughnessMap = origMat.roughnessMap;
+      
+      greyMat.side = origMat.side !== undefined ? origMat.side : THREE.FrontSide;
+      greyMat.transparent = origMat.transparent || false;
+      greyMat.opacity = origMat.opacity !== undefined ? origMat.opacity : 1;
+      
+      greyMat.sheen = new THREE.Color(0x000000); 
+      greyMat.sheenRoughness = 0.5;
+      
+      meshEntries.push({
+        mesh: child,
+        matIndex: Array.isArray(child.material) ? index : -1,
+        origMat,
+        greyMat,
+        checked: false
+      });
+    });
+  });
+
+  buildMeshList();
+  sph = {theta: 0.6, phi: 1.2, r: 2.5}; tgt.set(0,0,0); camUpdate();
+  
+  document.getElementById('loading').classList.remove('active');
+  document.getElementById('controls-hint').style.display = 'flex';
+}
+
+function loadSelectedModel() {
+  const url = document.getElementById('model-select').value;
+  if (!url) return;
+  
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('loading-text').textContent = 'Loading Model...';
+  
+  gltfLoader.load(url, (gltf) => {
+    processGLTFScene(gltf);
+  }, undefined, (err) => {
+    console.error(err);
+    document.getElementById('loading').classList.remove('active');
+    showToast("Failed to load 3D model.");
+  });
+}
+
+function handleFile(f) {
+  if(!f) return;
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('loading-text').textContent = 'Parsing File...';
+  document.getElementById('model-select').value = "";
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const arrayBuffer = e.target.result;
+    gltfLoader.parse(arrayBuffer, '', (gltf) => {
+      processGLTFScene(gltf);
+    }, (err) => {
+      console.error(err);
+      document.getElementById('loading').classList.remove('active');
+      showToast('Failed to parse uploaded GLB');
+    });
+  };
+  reader.onerror = function() {
+    document.getElementById('loading').classList.remove('active');
+    showToast('Failed to read file');
+  };
+  reader.readAsArrayBuffer(f);
+}
+
+viewer.addEventListener('dragover', e => { e.preventDefault(); viewer.classList.add('dragover'); document.getElementById('drop-overlay').classList.remove('hidden'); });
+viewer.addEventListener('dragleave', e => { if(e.relatedTarget && viewer.contains(e.relatedTarget)) return; viewer.classList.remove('dragover'); document.getElementById('drop-overlay').classList.add('hidden'); });
+viewer.addEventListener('drop', e => {
+  e.preventDefault(); 
+  viewer.classList.remove('dragover'); 
+  document.getElementById('drop-overlay').classList.add('hidden');
+  const f = e.dataTransfer.files[0]; 
+  if(f) handleFile(f);
+});
+
+// ── Mesh Selection UI ──────────────────────────────────────────
+function buildMeshList() {
+  const list = document.getElementById('mesh-list');
+  list.innerHTML = '';
+
+  if(meshEntries.length === 0){
+    list.innerHTML = '<div style="font-size:11px;color:#888;">No customizable parts found.</div>';
+    return;
+  }
+
+  // Calculate world bounds for physics-based naming
+  const worldBox = new THREE.Box3().setFromObject(currentModel);
+  const worldCenter = worldBox.getCenter(new THREE.Vector3());
+  const worldSize = worldBox.getSize(new THREE.Vector3());
+  let meshCounter = 0;
+
+  meshEntries.forEach((entry, i) => {
+    const row = document.createElement('label');
+    row.className = 'mesh-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = entry.checked;
+    
+    cb.addEventListener('change', () => {
+      entry.checked = cb.checked;
+      if (entry.matIndex === -1) {
+        entry.mesh.material = cb.checked ? entry.greyMat : entry.origMat;
+      } else {
+        const matArray = Array.isArray(entry.mesh.material) ?[...entry.mesh.material] :[];
+        if(matArray.length > 0) {
+          matArray[entry.matIndex] = cb.checked ? entry.greyMat : entry.origMat;
+          entry.mesh.material = matArray;
+        }
+      }
+      row.classList.toggle('selected', cb.checked);
+    });
+
+    const txt = document.createElement('span');
+    let rawName = entry.origMat.name || entry.mesh.name || `Part ${i+1}`;
+    
+    const nl = rawName.toLowerCase();
+    if (nl.includes('cushion') || nl.includes('seat')) rawName = 'Seat Cushion';
+    else if (nl.includes('leg') || nl.includes('foot') || nl.includes('base')) rawName = 'Legs / Base';
+    else if (nl.includes('arm')) rawName = 'Armrest';
+    else if (nl.includes('back')) rawName = 'Backrest';
+    else if (nl.includes('wood')) rawName = 'Wood Parts';
+    else if (nl.includes('metal')) rawName = 'Metal Parts';
+    else if (nl.includes('pillow')) rawName = 'Pillows';
+    else if (nl.includes('fabric')) rawName = 'Fabric';
+    else {
+        const isGarbage = rawName.length > 20 && (rawName.includes('-') || /[0-9a-f]{8}/i.test(rawName));
+        if (isGarbage || !rawName) {
+            const meshBox = new THREE.Box3().setFromObject(entry.mesh);
+            const meshCenter = meshBox.getCenter(new THREE.Vector3());
+            
+            if (meshCenter.y < worldCenter.y - worldSize.y * 0.25) rawName = 'Legs / Base';
+            else if (meshCenter.z < worldCenter.z - worldSize.z * 0.2) rawName = 'Backrest';
+            else if (Math.abs(meshCenter.x - worldCenter.x) > worldSize.x * 0.3) rawName = 'Armrests';
+            else rawName = `Body Part ${meshCounter + 1}`;
+        } else {
+            rawName = rawName.replace(/[-_]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+            rawName = rawName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            rawName = rawName.replace(/[0-9]+/g, '').replace(/\.gltf|\.glb|\.obj/g, '').trim();
+            if (!rawName || rawName.length < 2) rawName = `Part ${meshCounter + 1}`;
+        }
+    }
+
+    txt.textContent = rawName;
+    row.appendChild(cb); row.appendChild(txt);
+    list.appendChild(row);
+    meshCounter++;
+  });
+}
+
+// ── Apply Fabric with Smart Auto-Discovery ───────────────────────
+async function applyFabric(idx) {
+  const fabric = fabricLibrary[idx];
+  let hasChecked = meshEntries.some(e => e.checked);
+  
+  if (!hasChecked) {
+    showToast("Select a part in the right panel first!");
+    return;
+  }
+
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('loading-text').textContent = 'Applying Textures...';
+  
+  try {
+    // Automatically find the correct extension for each map type
+    const[diffRes, normRes, roughRes] = await Promise.all([
+      loadTextureWithFallbacks(fabric.folder, 'BaseColor', true),
+      loadTextureWithFallbacks(fabric.folder, 'Normal', false),
+      loadTextureWithFallbacks(fabric.folder, 'Roughness', false)
+    ]);
+
+    const diffTex = diffRes.tex;
+    const normTex = normRes.tex;
+    const roughTex = roughRes.tex;
+
+    // Pull defaults defined in fabricLibrary
+    const bright = fabric.defaults.brightness !== undefined ? fabric.defaults.brightness : 1.0;
+    const shn = fabric.defaults.sheen !== undefined ? fabric.defaults.sheen : 0.0;
+    const rgh = fabric.defaults.roughness !== undefined ? fabric.defaults.roughness : 0.7;
+    const mtl = fabric.defaults.metalness !== undefined ? fabric.defaults.metalness : 0.0;
+    const bmp = fabric.defaults.bump !== undefined ? fabric.defaults.bump : 1.0;
+
+    // Physics-based scaling: scale texture based on model size
+    // Larger models get smaller texture scales, smaller models get larger scales
+    const maxModelDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
+    const physicsScale = Math.max(0.5, Math.min(8.0, 4.0 / maxModelDim)); // Clamp between 0.5 and 8.0
+    
+    // Use physics-based scale if no custom scale is set, otherwise use the custom scale
+    const finalScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : physicsScale;
+
+    // Update UI Sliders to Preset Defaults
+    document.getElementById('brightness').value = bright;
+    document.getElementById('brightness-val').textContent = bright.toFixed(2);
+    
+    document.getElementById('sheen').value = shn;
+    document.getElementById('sheen-val').textContent = shn.toFixed(2);
+    
+    document.getElementById('roughness').value = rgh;
+    document.getElementById('roughness-val').textContent = rgh.toFixed(2);
+    
+    document.getElementById('metalness').value = mtl;
+    document.getElementById('metalness-val').textContent = mtl.toFixed(2);
+    
+    document.getElementById('tex-scale').value = finalScale;
+    document.getElementById('tex-scale-val').textContent = finalScale.toFixed(1);
+    
+    document.getElementById('norm-scale').value = bmp;
+    document.getElementById('norm-scale-val').textContent = bmp.toFixed(1);
+    [diffTex, normTex, roughTex].forEach(t => { if(t) t.repeat.set(finalScale, finalScale); });
+
+    // Inject Textures into Meshes
+    meshEntries.forEach(entry => {
+      if (entry.checked) {
+        const mat = entry.greyMat;
+        mat.map = diffTex;
+        mat.normalMap = normTex;
+        mat.roughnessMap = roughTex;
+        
+        // Brightness Multiplier logic using material color tinting
+        mat.color.setRGB(bright, bright, bright); 
+        mat.normalScale.set(bmp, bmp);
+        
+        const s = shn * 255;
+        mat.sheen = new THREE.Color(`rgb(${Math.floor(s)},${Math.floor(s)},${Math.floor(s)})`);
+        mat.roughness = rgh;
+        mat.metalness = mtl;
+        
+        mat.needsUpdate = true;
+      }
+    });
+
+  } catch (e) {
+    console.error("Texture Load Exception:", e);
+    showToast("Error retrieving texture maps.");
+  } finally {
+    document.getElementById('loading').classList.remove('active');
+  }
+}
+
+// ── Property Updates ───────────────────────────────────────────
+function applyPropToChecked(prop, val) {
+  const v = parseFloat(val);
+  meshEntries.forEach(entry => {
+    if (!entry.checked) return;
+    
+    if (prop === 'sheen') {
+      const c = Math.floor(v * 255);
+      entry.greyMat.sheen = new THREE.Color(`rgb(${c},${c},${c})`);
+    } else if (prop === 'brightness') {
+      entry.greyMat.color.setRGB(v, v, v);
+    } else {
+      entry.greyMat[prop] = v;
+    }
+    
+    entry.greyMat.needsUpdate = true;
+  });
+  document.getElementById(`${prop}-val`).textContent = v.toFixed(2);
+}
+
+function updateTextureScale(val) {
+  const scale = parseFloat(val);
+  document.getElementById('tex-scale-val').textContent = scale.toFixed(1);
+  meshEntries.forEach(entry => {
+    if (entry.checked && entry.greyMat) {['map', 'normalMap', 'roughnessMap'].forEach(type => {
+        const tex = entry.greyMat[type];
+        if (tex) { tex.repeat.set(scale, scale); tex.needsUpdate = true; }
+      });
+    }
+  });
+}
+
+function updateNormalScale(val) {
+  const strength = parseFloat(val);
+  document.getElementById('norm-scale-val').textContent = strength.toFixed(1);
+  meshEntries.forEach(entry => {
+    if (entry.checked && entry.greyMat.normalMap) {
+      entry.greyMat.normalScale.set(strength, strength);
+      entry.greyMat.needsUpdate = true;
+    }
+  });
+}
+
+// ── Render 4K Image ───────────────────────────────────────────
+async function renderScene() {
+  if (!currentModel) {
+    showToast("Load a model first!");
+    return;
+  }
+
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('loading-text').textContent = 'Rendering 4K Image...';
+
+  try {
+    // Render the scene to canvas
+    renderer.render(scene, camera);
+    const canvas = renderer.domElement;
+    
+    // Create a higher resolution render
+    const originalSize = { width: canvas.width, height: canvas.height };
+    const renderSize = { width: 3840, height: 2160 }; // 4K resolution
+    
+    renderer.setSize(renderSize.width, renderSize.height, false);
+    camera.aspect = renderSize.width / renderSize.height;
+    camera.updateProjectionMatrix();
+    
+    renderer.render(scene, camera);
+    
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64Data = dataUrl.split(',')[1];
+
+    // Call the API to generate AI-enhanced image
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ imageData: base64Data }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      console.error('API error:', response.status, errorBody);
+      showToast('Error generating render.');
+      return;
+    }
+
+    const result = await response.json();
+    if (result.imageUrl) {
+      // Show the rendered image in a modal
+      showRenderedImage(result.imageUrl);
+    } else {
+      showToast('Failed to generate image.');
+    }
+    
+    // Restore original canvas size
+    renderer.setSize(originalSize.width, originalSize.height, false);
+    camera.aspect = originalSize.width / originalSize.height;
+    camera.updateProjectionMatrix();
+    
+  } catch (error) {
+    console.error('Render error:', error);
+    showToast('Error generating render.');
+  } finally {
+    document.getElementById('loading').classList.remove('active');
+  }
+}
+
+function showRenderedImage(imageUrl) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
+    display: flex; align-items: center; justify-content: center; 
+    z-index: 1000; backdrop-filter: blur(4px);
+  `;
+  
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white; border-radius: 8px; overflow: hidden; 
+    max-width: 90vw; max-height: 90vh; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  `;
+  
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 16px 20px; border-bottom: 1px solid #ebebeb; 
+    display: flex; justify-content: space-between; align-items: center;
+  `;
+  
+  const title = document.createElement('h2');
+  title.textContent = '4K AI Render Result';
+  title.style.cssText = 'margin: 0; font-size: 16px; font-weight: 600; color: #111;';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×';
+  closeBtn.style.cssText = `
+    background: none; border: none; font-size: 24px; cursor: pointer; 
+    color: #888; padding: 0; width: 30px; height: 30px; 
+    display: flex; align-items: center; justify-content: center;
+  `;
+  closeBtn.onclick = () => document.body.removeChild(overlay);
+  
+  const imgContainer = document.createElement('div');
+  imgContainer.style.cssText = 'padding: 20px; display: flex; justify-content: center;';
+  
+  const img = document.createElement('img');
+  img.src = imageUrl;
+  img.style.cssText = 'max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px;';
+  
+  const footer = document.createElement('div');
+  footer.style.cssText = 'padding: 16px 20px; border-top: 1px solid #ebebeb; display: flex; justify-content: flex-end;';
+  
+  const downloadBtn = document.createElement('a');
+  downloadBtn.href = imageUrl;
+  downloadBtn.download = 'furniture_render_4k.png';
+  downloadBtn.style.cssText = `
+    background: #000; color: white; border: none; padding: 10px 20px; 
+    border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px;
+  `;
+  downloadBtn.textContent = 'Download Image';
+  
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  imgContainer.appendChild(img);
+  footer.appendChild(downloadBtn);
+  
+  modal.appendChild(header);
+  modal.appendChild(imgContainer);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  
+  document.body.appendChild(overlay);
+}
+
+// ── Export ─────────────────────────────────────────────────────
+function exportGLB() {
+  if (!currentModel) { showToast("Load a model first!"); return; }
+  
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('loading-text').textContent = 'Packaging GLB...';
+  
+  const exporter = new THREE.GLTFExporter();
+  exporter.parse(
+    scene,
+    (gltf) => {
+      const blob = new Blob([gltf], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'customized_furniture.glb';
+      link.click();
+      URL.revokeObjectURL(url);
+      
+      document.getElementById('loading').classList.remove('active');
+      showToast("Download started!");
+    },
+    (err) => {
+      console.error(err);
+      document.getElementById('loading').classList.remove('active');
+      showToast("Export failed!");
+    },
+    { binary: true } 
+  );
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+window.onload = () => { loadSelectedModel(); };
+
+</script>
+</body>
+</html>
