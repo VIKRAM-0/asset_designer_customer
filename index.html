@@ -743,7 +743,8 @@ async function applyFabric(idx) {
     const scaleCompensation = 1.6 / maxDim; // <--- The math is now inverted to match the 3D scale
     
     const baseScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : 3.0;
-    const finalScale = baseScale * scaleCompensation;
+    // Use the exact scale value without any hidden math modifications
+    const finalScale = fabric.defaults.scale !== undefined ? fabric.defaults.scale : 3.0;
 
     // Update UI Sliders to Preset Defaults
     document.getElementById('brightness').value = bright;
@@ -818,10 +819,8 @@ function updateTextureScale(val) {
   const scale = parseFloat(val);
   document.getElementById('tex-scale-val').textContent = scale.toFixed(1);
   
-  // Apply the same inverted scale compensation to the manual slider
-  const maxDim = Math.max(currentModelSize.x, currentModelSize.y, currentModelSize.z);
-  const scaleCompensation = 1.6 / maxDim; // <--- Corrected inverted math
-  const finalScale = scale * scaleCompensation;
+  // Let the slider directly control the texture repeat (1:1 ratio)
+  const finalScale = scale;
 
   meshEntries.forEach(entry => {
     if (entry.checked && entry.greyMat) {
