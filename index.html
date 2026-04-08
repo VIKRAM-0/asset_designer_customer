@@ -621,7 +621,7 @@ function buildMeshList() {
             else rawName = `Body Part ${meshCounter + 1}`;
         } else {
             rawName = rawName.replace(/[-_]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-            rawName = rawName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            rawName = rawName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
             rawName = rawName.replace(/[0-9]+/g, '').replace(/\.gltf|\.glb|\.obj/g, '').trim();
             if (!rawName || rawName.length < 2) rawName = `Part ${meshCounter + 1}`;
         }
