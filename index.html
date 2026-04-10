@@ -402,10 +402,53 @@ async function loadTextureWithFallbacks(folder, fileName, isSrgb) {
   return { tex: null, url: null };
 }
 
-// ── Build UI with Smart Thumbnails ─────────────────────────────
+// ── Build UI with Lazy Thumbnails (IntersectionObserver) ─────────
+// Pending-fetch dedup map: url -> Promise, prevents simultaneous identical fetches
+const texPending = {};
+
+async function loadTextureWithFallbacksDeduped(folder, fileName, isSrgb) {
+  // Generate a stable key for this request
+  const cacheKey = `${folder}/${fileName}`;
+  
+  // Check if any variant is already in cache
+  const extensions = ['.webp', '.jpg', '.JPG', '.png', '.PNG', '.jpeg', '.JPEG'];
+  for (const ext of extensions) {
+    if (texCache[folder + '/' + fileName + ext]) {
+      return { tex: texCache[folder + '/' + fileName + ext], url: folder + '/' + fileName + ext };
+    }
+  }
+  
+  // Dedup: if a fetch for this key is already in-flight, wait for it
+  if (texPending[cacheKey]) return texPending[cacheKey];
+  
+  const p = loadTextureWithFallbacks(folder, fileName, isSrgb);
+  texPending[cacheKey] = p;
+  p.finally(() => { delete texPending[cacheKey]; });
+  return p;
+}
+
 function initFabricLibrary() {
   const grid = document.getElementById('fabric-grid');
   grid.innerHTML = '';
+  
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      const imgEl = entry.target;
+      const folder = imgEl.dataset.folder;
+      (async () => {
+        try {
+          const result = await loadTextureWithFallbacksDeduped(folder, 'BaseColor', true);
+          if (result.url) {
+            imgEl.style.backgroundImage = `url(${result.url})`;
+            imgEl.style.backgroundSize = 'cover';
+            imgEl.style.backgroundPosition = 'center';
+          }
+        } catch (e) { /* keep checkered fallback */ }
+      })();
+    });
+  }, { rootMargin: '100px' });
   
   fabricLibrary.forEach((fab, idx) => {
     const card = document.createElement('div');
@@ -417,6 +460,7 @@ function initFabricLibrary() {
     img.style.background = '#e8e8e8 linear-gradient(45deg, #e8e8e8 25%, transparent 25%, transparent 75%, #e8e8e8 75%, #e8e8e8), linear-gradient(45deg, #e8e8e8 25%, transparent 25%, transparent 75%, #e8e8e8 75%, #e8e8e8)';
     img.style.backgroundSize = '24px 24px';
     img.style.backgroundPosition = '0 0, 12px 12px';
+    img.dataset.folder = fab.folder; // store for lazy loader
     
     const title = document.createElement('div');
     title.className = 'fabric-name';
@@ -426,20 +470,7 @@ function initFabricLibrary() {
     card.appendChild(title);
     grid.appendChild(card);
     
-    // Dynamically find the BaseColor extension for the thumbnail
-    // Don't show errors if textures can't be loaded
-    (async () => {
-      try {
-        const result = await loadTextureWithFallbacks(fab.folder, 'BaseColor', true);
-        if (result.url) {
-          img.style.backgroundImage = `url(${result.url})`;
-          img.style.backgroundSize = 'cover';
-          img.style.backgroundPosition = 'center';
-        }
-      } catch (e) {
-        // Keep checkered pattern fallback
-      }
-    })();
+    observer.observe(img); // lazy: load thumbnail only when visible
   });
 }
 initFabricLibrary();
@@ -447,7 +478,7 @@ initFabricLibrary();
 // ── Scene Setup & High-End Lighting ────────────────────────────
 const viewer = document.getElementById('viewer');
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x — 3x+ gives diminishing returns at huge GPU cost
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.physicallyCorrectLights = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -466,6 +497,16 @@ const dirLight = new THREE.DirectionalLight(0xfff8f0, 2.5);
 dirLight.position.set(3, 5, 4);
 scene.add(ambientLight, dirLight);
 
+// ── Dirty-flag render loop: only re-render when something changed ──
+let _renderDirty = true;
+function markDirty() { _renderDirty = true; }
+(function loop() {
+  requestAnimationFrame(loop);
+  if (!_renderDirty) return;
+  _renderDirty = false;
+  renderer.render(scene, camera);
+})();
+
 // ── Orbit Controls ─────────────────────────────────────────────
 let isDrag=false, isRight=false, prevMouse={x:0, y:0};
 let sph={theta: 0.6, phi: 1.2, r: 2.5};
@@ -478,6 +519,7 @@ function camUpdate() {
     tgt.z + sph.r * Math.sin(sph.phi) * Math.cos(sph.theta)
   );
   camera.lookAt(tgt);
+  markDirty();
 }
 camUpdate();
 
@@ -505,9 +547,9 @@ viewer.addEventListener('wheel', e => { sph.r = Math.max(0.5, Math.min(10, sph.r
 function resize() {
   const w = viewer.clientWidth, h = viewer.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  markDirty();
 }
 new ResizeObserver(resize).observe(viewer); resize();
-(function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); })();
 
 // ── GLTF & Draco Loaders Initialization ─────────────────────────
 const dracoLoader = new THREE.DRACOLoader();
@@ -575,6 +617,7 @@ function processGLTFScene(gltf) {
 
   buildMeshList();
   sph = {theta: 0.6, phi: 1.2, r: 2.5}; tgt.set(0,0,0); camUpdate();
+  markDirty();
   
   document.getElementById('loading').classList.remove('active');
   document.getElementById('controls-hint').style.display = 'flex';
@@ -666,6 +709,7 @@ function buildMeshList() {
         }
       }
       row.classList.toggle('selected', cb.checked);
+      markDirty();
     });
 
     const txt = document.createElement('span');
@@ -786,6 +830,7 @@ async function applyFabric(idx) {
         mat.needsUpdate = true;
       }
     });
+    markDirty();
 
   } catch (e) {
     console.error("Texture Load Exception:", e);
@@ -813,6 +858,7 @@ function applyPropToChecked(prop, val) {
     entry.greyMat.needsUpdate = true;
   });
   document.getElementById(`${prop}-val`).textContent = v.toFixed(2);
+  markDirty();
 }
 
 function updateTextureScale(val) {
@@ -830,6 +876,7 @@ function updateTextureScale(val) {
       });
     }
   });
+  markDirty();
 }
 
 function updateNormalScale(val) {
@@ -841,80 +888,67 @@ function updateNormalScale(val) {
       entry.greyMat.needsUpdate = true;
     }
   });
+  markDirty();
 }
 
-// ── Render 4K Image ───────────────────────────────────────────
+// ── Render Scene (High-Res Snapshot) ──────────────────────────
+// Strategy: capture the live canvas directly — never resize the renderer.
+// Resizing to 4K caused: ResizeObserver fight, blank toDataURL, broken aspect ratio.
+// The Gemini API handles upscaling on its end.
 async function renderScene() {
-  if (!currentModel) {
-    showToast("Load a model first!");
-    return;
-  }
+  if (!currentModel) { showToast("Load a model first!"); return; }
 
   document.getElementById('loading').classList.add('active');
-  document.getElementById('loading-text').textContent = 'Rendering in Living Room';
+  document.getElementById('loading-text').textContent = 'Capturing Scene…';
 
   try {
-    // Render the scene to canvas
+    // Force one clean render then grab the canvas as-is
     renderer.render(scene, camera);
-    const canvas = renderer.domElement;
-    
-    // Create a higher resolution render
-    const originalSize = { width: canvas.width, height: canvas.height };
-    const renderSize = { width: 3840, height: 2160 }; // 4K resolution
-    
-    renderer.setSize(renderSize.width, renderSize.height, false);
-    camera.aspect = renderSize.width / renderSize.height;
-    camera.updateProjectionMatrix();
-    
-    renderer.render(scene, camera);
-    
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-    const base64Data = dataUrl.split(',')[1];
+    // Small delay to ensure GPU flush before toDataURL
+    await new Promise(r => setTimeout(r, 50));
+    const dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.92);
 
-    // Call the API to generate AI-enhanced image
-    // Note: /api/generate only works when deployed to Vercel
+    // Probe API availability without consuming a POST budget
+    let apiAvailable = false;
+    try {
+      const probe = await fetch('/api/generate', { method: 'HEAD' });
+      apiAvailable = probe.status !== 404;
+    } catch (_) {}
+
+    if (!apiAvailable) {
+      showToast('⚠️ 4K Rendering: Deploy to Vercel to enable this feature');
+      showRenderedImage(dataUrl, true);
+      return;
+    }
+
+    document.getElementById('loading-text').textContent = 'AI Rendering…';
+
     const response = await fetch('/api/generate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ imageData: base64Data }),
-      timeout: 30000
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: dataUrl.split(',')[1] }),
+      signal: AbortSignal.timeout(60000) // proper timeout via AbortSignal
     });
 
     if (!response.ok) {
-      if (response.status === 404) {
-        showToast('⚠️ 4K Rendering: Deploy to Vercel to enable this feature');
-        console.log('%cℹ️ 4K Rendering Info:', 'color: blue; font-weight: bold;');
-        console.log('This feature requires Vercel deployment with GEMINI_API_KEY environment variable.');
-        console.log('Current environment: Local Development (API not available)');
-        // Show the current render at regular resolution instead
-        showRenderedImage(dataUrl, true);
-      } else {
-        const errorBody = await response.json().catch(() => null);
-        console.error('API error:', response.status, errorBody);
-        showToast('Error generating 4K render.');
-      }
+      const errBody = await response.json().catch(() => null);
+      console.error('API error:', response.status, errBody);
+      showToast('Error generating 4K render.');
       return;
     }
 
     const result = await response.json();
     if (result.imageUrl) {
-      // Show the rendered image in a modal
       showRenderedImage(result.imageUrl, false);
     } else {
       showToast('Failed to generate image.');
     }
-    
-    // Restore original canvas size
-    renderer.setSize(originalSize.width, originalSize.height, false);
-    camera.aspect = originalSize.width / originalSize.height;
-    camera.updateProjectionMatrix();
-    
+
   } catch (error) {
     console.error('Render error:', error);
     showToast('Error generating render.');
   } finally {
+    // Viewer canvas never touched — no restore needed
     document.getElementById('loading').classList.remove('active');
   }
 }
@@ -1001,14 +1035,17 @@ function exportGLB() {
   
   const exporter = new THREE.GLTFExporter();
   exporter.parse(
-    scene,
+    currentModel,
     (gltf) => {
-      const blob = new Blob([gltf], { type: 'application/octet-stream' });
+      const blob = new Blob([gltf instanceof ArrayBuffer ? gltf : JSON.stringify(gltf)], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url; link.download = 'customized_furniture.glb';
+      link.style.display = 'none';
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       
       document.getElementById('loading').classList.remove('active');
       showToast("Download started!");
@@ -1028,31 +1065,11 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// Log configuration status on page load
+// Single init on load — avoids double-fire from addEventListener('load') + window.onload
 window.addEventListener('load', () => {
-  console.log('%c📱 Customer Configurator Loaded', 'color: #000; font-weight: bold; font-size: 14px;');
-  console.log('%cℹ️ Configuration Status:', 'color: blue; font-weight: bold;');
-  console.log('✅ 3D Viewer: Ready');
-  console.log('✅ Model Loading: Ready (Upload GLB or select from dropdown)');
-  console.log('');
-  console.log('%cℹ️ Texture Loading Strategy:', 'color: green; font-weight: bold;');
-  console.log('File extensions being tried (in order):');
-  console.log('  1. .webp (modern compressed format)');
-  console.log('  2. .JPG / .jpg (standard compressed)');
-  console.log('  3. .PNG / .png (lossless format)');
-  console.log('  4. .JPEG / .jpeg (alternative compressed)');
-  console.log('');
-  console.log('Watch the console logs below for [Texture Loading] and [Texture Loaded] messages');
-  console.log('');
-  console.log('%cℹ️ 4K AI Rendering:', 'color: orange; font-weight: bold;');
-  console.log('⚠️ Not available locally (404 /api/generate)');
-  console.log('Action: Deploy to Vercel with GEMINI_API_KEY set');
-  console.log('');
-  console.log('%cℹ️ GLB Export:', 'color: purple; font-weight: bold;');
-  console.log('✅ Ready - Select meshes and click "Download GLB"');
+  console.log('📱 Customer Configurator ready.');
+  loadSelectedModel();
 });
-
-window.onload = () => { loadSelectedModel(); };
 
 </script>
 </body>
