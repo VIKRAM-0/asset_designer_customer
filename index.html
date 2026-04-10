@@ -191,7 +191,7 @@
       <option value="https://nyvlydjdvhsunqbliqru.supabase.co/storage/v1/object/public/fabric_assets/glbs/sofa_192.glb">Sofa</option>
       <option value="https://nyvlydjdvhsunqbliqru.supabase.co/storage/v1/object/public/fabric_assets/glbs/accent_chair_43.glb">Accent Chair</option>
     </select>
-    <button class="btn-render" onclick="renderScene()">Render 4K</button>
+    <button class="btn-render" onclick="renderScene()">Render</button>
     <button class="btn-primary" onclick="exportGLB()">Download GLB</button>
   </div>
 </header>
@@ -851,7 +851,7 @@ async function renderScene() {
   }
 
   document.getElementById('loading').classList.add('active');
-  document.getElementById('loading-text').textContent = 'Rendering 4K Image...';
+  document.getElementById('loading-text').textContent = 'Rendering in Living Room';
 
   try {
     // Render the scene to canvas
@@ -941,7 +941,7 @@ function showRenderedImage(imageUrl, isLocalRender = false) {
   `;
   
   const title = document.createElement('h2');
-  title.textContent = isLocalRender ? 'Scene Preview' : '4K AI Render Result';
+  title.textContent = isLocalRender ? 'Scene Preview' : 'Render';
   title.style.cssText = 'margin: 0; font-size: 16px; font-weight: 600; color: #111;';
   
   const closeBtn = document.createElement('button');
